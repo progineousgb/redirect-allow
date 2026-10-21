@@ -25,7 +25,8 @@
         "illuminate/support": "^12.0 || ^13.0",
         "illuminate/http": "^12.0 || ^13.0",
         "illuminate/validation": "^12.0 || ^13.0",
-        "phpstan/phpstan": "^2.1"
+        "phpstan/phpstan": "^2.1",
+        "illuminate/config": "^12.0 || ^13.0"
     },
     "suggest": {
         "illuminate/support": "Optional. Registers the service provider, facade, validation rule, and redirect response on Laravel 12 and 13 (^12.0 || ^13.0). The decision engine does not need Laravel.",
