@@ -2,7 +2,7 @@
 
 ## What it is
 
-redirect-allow decides where a Laravel redirect may send the browser. You pass the target, a list of hosts, and a fallback. A relative path on the current site, or an https URL whose host is on the list, is kept. Every other target is replaced with the fallback.
+redirect-allow decides where a Laravel redirect may send the browser. You pass the target, a list of hosts, and a fallback. A path that starts with one slash, or an https URL whose host is on the list, is kept. Every other target is replaced with the fallback. The request `Host` header is never used.
 
 Use it for the URL a person returns to after login, and for the URL a payment page sends them back to.
 
@@ -20,7 +20,6 @@ $next = (new Decider())->decide(
     $target,
     ['app.example', 'accept.paymob.com'],
     'https://app.example/home',
-    'https://app.example/login',
 );
 ```
 
@@ -28,7 +27,7 @@ $next = (new Decider())->decide(
 use Progineous\RedirectAllow\Rules\AllowedRedirect;
 
 'next' => ['nullable', 'string', new AllowedRedirect(
-    hosts: [$request->host(), 'accept.paymob.com'],
+    hosts: ['accept.paymob.com'],
 )],
 ```
 
@@ -73,21 +72,22 @@ Laravel is optional. On Laravel 12 or 13, `illuminate/support` registers the ser
 use Progineous\RedirectAllow\Facades\RedirectAllow;
 
 return RedirectAllow::to($request->string('next'))
-    ->hosts([
-        $request->host(),
-        'accept.paymob.com',
-    ])
+    ->hosts(['accept.paymob.com'])
     ->fallback(route('dashboard'))
     ->send();
 ```
 
-`send()` uses the current request URL as the base for a target that is not a single-slash path, such as `dashboard` or `?tab=2`. Call `base()` with an absolute URL when the decision runs outside a request, or when you want a different base. A single-slash path does not use the base.
+In Laravel, the host of `config('app.url')` is your own host. The facade and the validation rule add it to the list for you, so `https://app.example/settings` is allowed when `APP_URL=https://app.example`. Pass `appUrl:` to the rule to use a different URL. Outside Laravel, `Decider` and `new RedirectAllow()` only allow the hosts you list. Pass your own host to `new RedirectAllow('app.example')` if you want it.
+
+The request URL and its `Host` header are not read anywhere. A request with a spoofed `Host` header gets the same decision as an honest one.
 
 ## Relative paths and listed hosts
 
 Null, empty, and whitespace use the fallback.
 
-A path that starts with a single slash, such as `/dashboard?tab=2#top`, is returned as a relative URL: the path, query, and fragment as the WHATWG parser normalized them. Dot segments are resolved and unsafe characters are percent-encoded, so `/a/../b` becomes `/b`. The browser resolves the result against the page it is on, so the `Host` header of the request cannot change where it points. A path that the parser would move to another host, such as `/\evil.example` or `/<tab>/evil.example`, is rejected. A path that normalizes to two leading slashes, such as `/..//evil.example`, is rejected too.
+A relative target that does not start with one slash, such as `dashboard`, `./x`, `../x`, `?a=1`, or `#frag`, uses the fallback. It is not resolved against any URL.
+
+A path that starts with a single slash, such as `/dashboard?tab=2#top`, is returned as a relative URL: the path, query, and fragment as the WHATWG parser normalized them. Dot segments are resolved and unsafe characters are percent-encoded, so `/a/../b` becomes `/b`. The browser resolves the result against the page it is on, and nothing from the request changes it. A path that the parser would move to another host, such as `/\evil.example` or `/<tab>/evil.example`, is rejected. A path that normalizes to two leading slashes, such as `/..//evil.example`, is rejected too.
 
 A protocol-relative value that starts with `//` is rejected, and the fallback is used.
 
@@ -100,12 +100,6 @@ A list entry must be a hostname. A URL such as `https://accept.paymob.com`, a ho
 The port is not checked. An allowed host is allowed on any port, for example `https://accept.paymob.com:8443/`.
 
 Host comparison ignores letter case. One trailing dot, the DNS root, is ignored. Two trailing dots are rejected. A trailing dot does not make a host match a different site. When the target is allowed, the result is the parser's URL, not the raw input. When it is rejected, the result is the fallback. Bad input does not throw.
-
-## The current host
-
-A single-slash path never depends on the request. It stays a relative URL on whatever site served the page.
-
-A target without a leading slash, such as `dashboard` or `../x`, is resolved against the base URL, and then it has to pass the host list like any absolute URL. In a request, that base comes from the `Host` header. If you list `$request->host()`, enable Laravel's `TrustHosts` middleware, or list your own hostname directly instead.
 
 ## Limits
 

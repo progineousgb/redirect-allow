@@ -15,8 +15,6 @@ use Uri\WhatWg\Url;
 
 final class DeciderTest extends TestCase
 {
-    private const BASE = 'https://app.example/login';
-
     private const FALLBACK = 'https://app.example/home';
 
     #[DataProvider('decisions')]
@@ -40,7 +38,6 @@ final class DeciderTest extends TestCase
             ->to('https://Accept.PAYMOB.com/x')
             ->hosts(['accept.paymob.com'])
             ->fallback(self::FALLBACK)
-            ->base(self::BASE)
             ->url();
 
         $this->assertSame('https://accept.paymob.com/x', $url);
@@ -59,7 +56,6 @@ final class DeciderTest extends TestCase
             ->to($target)
             ->hosts([])
             ->fallback(self::FALLBACK)
-            ->base(self::BASE)
             ->url();
 
         $this->assertSame('/dashboard', $url);
@@ -71,25 +67,7 @@ final class DeciderTest extends TestCase
 
         (new RedirectAllow())
             ->to('/dashboard')
-            ->base(self::BASE)
             ->url();
-    }
-
-    public function test_url_requires_a_current_absolute_url_outside_a_request(): void
-    {
-        $this->expectException(LogicException::class);
-
-        (new RedirectAllow())
-            ->to('/dashboard')
-            ->fallback(self::FALLBACK)
-            ->url();
-    }
-
-    public function test_an_unusable_base_url_is_a_caller_error(): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-
-        (new Decider())->decide('/dashboard', [], self::FALLBACK, '/login');
     }
 
     public function test_bad_input_does_not_throw(): void
@@ -97,7 +75,7 @@ final class DeciderTest extends TestCase
         $decider = new Decider();
 
         foreach (['::::', 'https://', 'https://%', "\0"] as $target) {
-            $this->assertSame(self::FALLBACK, $decider->decide($target, ['accept.paymob.com'], self::FALLBACK, self::BASE));
+            $this->assertSame(self::FALLBACK, $decider->decide($target, ['accept.paymob.com'], self::FALLBACK));
         }
     }
 
@@ -128,14 +106,12 @@ final class DeciderTest extends TestCase
         $this->assertSame('https://[::1]/', $this->decide('https://[::1]/', ['[::1]']));
     }
 
-    public function test_a_relative_path_does_not_depend_on_the_base_host(): void
+    public function test_a_relative_path_needs_no_base_url(): void
     {
         $decider = new Decider();
 
-        foreach (['https://app.example/login', 'https://evil.example/', 'http://localhost:8000/x'] as $base) {
-            $this->assertSame('/dashboard?a=1', $decider->decide('/dashboard?a=1', [], self::FALLBACK, $base));
-            $this->assertSame(self::FALLBACK, $decider->decide('/\\evil.example', ['evil.example'], self::FALLBACK, $base));
-        }
+        $this->assertSame('/dashboard?a=1', $decider->decide('/dashboard?a=1', [], self::FALLBACK));
+        $this->assertSame(self::FALLBACK, $decider->decide('/\\evil.example', ['evil.example'], self::FALLBACK));
     }
 
     public function test_laravel_wiring_is_present_without_booting_the_framework(): void
@@ -185,7 +161,7 @@ final class DeciderTest extends TestCase
      */
     private function decide(string|null $target, array $hosts): string
     {
-        return (new Decider())->decide($target, $hosts, self::FALLBACK, self::BASE);
+        return (new Decider())->decide($target, $hosts, self::FALLBACK);
     }
 
     /**
@@ -241,6 +217,16 @@ final class DeciderTest extends TestCase
             'the fallback is used when the parsers disagree on the host' => ['https://allowed.example\\.evil.example/', ['allowed.example'], $fallback],
             'a slash path that resolves to another host is rejected' => ['/\\evil.example', $listed, $fallback],
             'garbage uses the fallback' => ['::::', $listed, $fallback],
+            'a bare relative path is rejected' => ['dashboard', ['app.example'], $fallback],
+            'a dot relative path is rejected' => ['./dashboard', ['app.example'], $fallback],
+            'a parent relative path is rejected' => ['../x', ['app.example'], $fallback],
+            'a query-only target is rejected' => ['?a=1', ['app.example'], $fallback],
+            'a fragment-only target is rejected' => ['#frag', ['app.example'], $fallback],
+            'a relative path that looks like a host is rejected' => ['accept.paymob.com/cb', $listed, $fallback],
+            'a zero-width space before a slash path is rejected' => ["\u{200B}/dashboard", ['app.example'], $fallback],
+            'a byte order mark before a protocol-relative url is rejected' => ["\u{FEFF}//evil.example", ['app.example'], $fallback],
+            'https without slashes on another host is rejected' => ['https:evil.example', $listed, $fallback],
+            'https with one slash on another host is rejected' => ['https:/evil.example', $listed, $fallback],
             'two trailing dots do not match the host' => ['https://accept.paymob.com../ok', $listed, $fallback],
             'a unicode allowlist entry matches the punycode target' => ['https://xn--bcher-kva.de/', ["b\u{00FC}cher.de"], 'https://xn--bcher-kva.de/'],
             'a unicode target matches a unicode allowlist entry' => ["https://b\u{00FC}cher.de/", ["b\u{00FC}cher.de"], 'https://xn--bcher-kva.de/'],

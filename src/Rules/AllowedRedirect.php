@@ -6,6 +6,7 @@ namespace Progineous\RedirectAllow\Rules;
 
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Progineous\RedirectAllow\AppHost;
 use Progineous\RedirectAllow\RedirectAllow;
 use Stringable;
 
@@ -14,11 +15,13 @@ final class AllowedRedirect implements ValidationRule
     private const REJECTED = "\0";
 
     /**
-     * @param list<string|Stringable> $hosts
+     * @param list<string|Stringable> $hosts Hosts that absolute https targets may use.
+     * @param string|null $appUrl The application's own URL. When it is null, the host
+     *                            of config('app.url') is used if Laravel is running.
      */
     public function __construct(
-        private readonly array $hosts,
-        private readonly ?string $base = null,
+        private readonly array $hosts = [],
+        private readonly ?string $appUrl = null,
     ) {
     }
 
@@ -30,14 +33,11 @@ final class AllowedRedirect implements ValidationRule
             return;
         }
 
-        $pending = (new RedirectAllow())
+        $appHost = $this->appUrl !== null ? AppHost::fromUrl($this->appUrl) : AppHost::fromConfig();
+        $pending = (new RedirectAllow($appHost))
             ->to($value)
             ->hosts($this->hosts)
             ->fallback(self::REJECTED);
-
-        if ($this->base !== null) {
-            $pending->base($this->base);
-        }
 
         if ($pending->url() === self::REJECTED) {
             $fail('The :attribute is not an allowed redirect.');

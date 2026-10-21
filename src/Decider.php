@@ -16,13 +16,16 @@ final class Decider
     private const PLACEHOLDER = 'https://relative.invalid/';
 
     /**
-     * Return the WHATWG URL when the target is allowed, otherwise the fallback.
+     * Return the allowed target, otherwise the fallback.
      *
-     * Bad input uses the fallback. It does not throw.
+     * A path that starts with one slash is returned as a relative URL. An absolute
+     * https URL is returned when its host is on the list. Every other target,
+     * including a relative target without a leading slash, uses the fallback.
+     * Nothing is resolved against the request URL. Bad input does not throw.
      *
      * @param list<string|Stringable> $hosts
      */
-    public function decide(?string $target, array $hosts, string $fallback, string $base): string
+    public function decide(?string $target, array $hosts, string $fallback): string
     {
         if ($target === null || preg_match('/^\s*$/u', $target) === 1) {
             return $fallback;
@@ -33,15 +36,15 @@ final class Decider
             return $fallback;
         }
 
-        $baseUrl = $this->baseUrl($base);
-
         if (str_starts_with($target, '/')) {
             return $this->relativePath($target) ?? $fallback;
         }
 
         try {
             $errors = [];
-            $url = Url::parse($target, $baseUrl, $errors);
+            // No base URL: a relative target such as dashboard, ../x, ?a, or #frag
+            // does not parse, and uses the fallback.
+            $url = Url::parse($target, null, $errors);
         } catch (Throwable) {
             return $fallback;
         }
@@ -74,8 +77,8 @@ final class Decider
 
     /**
      * A path that starts with one slash is returned as a relative URL: path, query,
-     * and fragment. It is parsed against a placeholder origin, not the request URL,
-     * so the Host header cannot change where it points. If the parser moves it to
+     * and fragment. It is parsed against a placeholder origin, so no request value
+     * can change where it points. If the parser moves it to
      * another host (for example /\\evil.example), or the normalized path starts with
      * two slashes (for example /..//evil.example), it is rejected.
      */
@@ -88,7 +91,7 @@ final class Decider
             return null;
         }
 
-        if (!$url instanceof Url || $url->getAsciiHost() !== self::PLACEHOLDER_HOST) {
+        if (!$url instanceof Url || $this->scheme($url) !== 'https' || $url->getAsciiHost() !== self::PLACEHOLDER_HOST) {
             return null;
         }
 
@@ -105,27 +108,6 @@ final class Decider
         $fragment = $url->getFragment();
 
         return $path . ($query !== null ? '?' . $query : '') . ($fragment !== null ? '#' . $fragment : '');
-    }
-
-    private function baseUrl(string $base): Url
-    {
-        try {
-            $errors = [];
-            $url = Url::parse($base, null, $errors);
-        } catch (Throwable $exception) {
-            throw new InvalidArgumentException('The current absolute URL could not be parsed.', 0, $exception);
-        }
-
-        if (!$url instanceof Url) {
-            throw new InvalidArgumentException('The current absolute URL could not be parsed.');
-        }
-
-        $host = $url->getAsciiHost();
-        if ($this->scheme($url) === '' || !is_string($host) || $host === '') {
-            throw new InvalidArgumentException('The current absolute URL could not be parsed.');
-        }
-
-        return $url;
     }
 
     private function scheme(Url $url): string

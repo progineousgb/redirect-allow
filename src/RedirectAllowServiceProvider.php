@@ -13,6 +13,10 @@ final class RedirectAllowServiceProvider extends ServiceProvider
      */
     public function register()
     {
-        $this->app->singleton(RedirectAllow::class);
+        $this->app->singleton(RedirectAllow::class, static function ($app): RedirectAllow {
+            $url = $app->bound('config') ? $app->make('config')->get('app.url') : null;
+
+            return new RedirectAllow(AppHost::fromUrl(is_string($url) ? $url : null));
+        });
     }
 }
