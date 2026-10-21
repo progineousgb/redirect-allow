@@ -11,6 +11,10 @@ use Uri\WhatWg\Url;
 
 final class Decider
 {
+    private const PLACEHOLDER_HOST = 'relative.invalid';
+
+    private const PLACEHOLDER = 'https://relative.invalid/';
+
     /**
      * Return the WHATWG URL when the target is allowed, otherwise the fallback.
      *
@@ -30,6 +34,10 @@ final class Decider
         }
 
         $baseUrl = $this->baseUrl($base);
+
+        if (str_starts_with($target, '/')) {
+            return $this->relativePath($target) ?? $fallback;
+        }
 
         try {
             $errors = [];
@@ -57,16 +65,46 @@ final class Decider
             return $fallback;
         }
 
-        $baseHost = $this->normalizeHost((string) $baseUrl->getAsciiHost());
-        if (str_starts_with($target, '/') && $host === $baseHost) {
-            return $url->toAsciiString();
-        }
-
         if ($this->hostAllowed($host, $hosts)) {
             return $url->toAsciiString();
         }
 
         return $fallback;
+    }
+
+    /**
+     * A path that starts with one slash is returned as a relative URL: path, query,
+     * and fragment. It is parsed against a placeholder origin, not the request URL,
+     * so the Host header cannot change where it points. If the parser moves it to
+     * another host (for example /\\evil.example), or the normalized path starts with
+     * two slashes (for example /..//evil.example), it is rejected.
+     */
+    private function relativePath(string $target): ?string
+    {
+        try {
+            $errors = [];
+            $url = Url::parse($target, Url::parse(self::PLACEHOLDER), $errors);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (!$url instanceof Url || $url->getAsciiHost() !== self::PLACEHOLDER_HOST) {
+            return null;
+        }
+
+        if ($url->getUsername() !== null || $url->getPassword() !== null || $url->getPort() !== null) {
+            return null;
+        }
+
+        $path = $url->getPath();
+        if (!str_starts_with($path, '/') || str_starts_with($path, '//') || str_contains($path, '\\')) {
+            return null;
+        }
+
+        $query = $url->getQuery();
+        $fragment = $url->getFragment();
+
+        return $path . ($query !== null ? '?' . $query : '') . ($fragment !== null ? '#' . $fragment : '');
     }
 
     private function baseUrl(string $base): Url

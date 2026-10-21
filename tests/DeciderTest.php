@@ -62,7 +62,7 @@ final class DeciderTest extends TestCase
             ->base(self::BASE)
             ->url();
 
-        $this->assertSame('https://app.example/dashboard', $url);
+        $this->assertSame('/dashboard', $url);
     }
 
     public function test_fallback_is_required(): void
@@ -128,6 +128,16 @@ final class DeciderTest extends TestCase
         $this->assertSame('https://[::1]/', $this->decide('https://[::1]/', ['[::1]']));
     }
 
+    public function test_a_relative_path_does_not_depend_on_the_base_host(): void
+    {
+        $decider = new Decider();
+
+        foreach (['https://app.example/login', 'https://evil.example/', 'http://localhost:8000/x'] as $base) {
+            $this->assertSame('/dashboard?a=1', $decider->decide('/dashboard?a=1', [], self::FALLBACK, $base));
+            $this->assertSame(self::FALLBACK, $decider->decide('/\\evil.example', ['evil.example'], self::FALLBACK, $base));
+        }
+    }
+
     public function test_laravel_wiring_is_present_without_booting_the_framework(): void
     {
         $root = dirname(__DIR__);
@@ -191,9 +201,9 @@ final class DeciderTest extends TestCase
             'empty string uses the fallback' => ['', $listed, $fallback],
             'spaces use the fallback' => ['   ', $listed, $fallback],
             'tabs and newlines use the fallback' => ["\n\t  ", $listed, $fallback],
-            'a single-slash path is allowed' => ['/dashboard', ['accept.paymob.com'], 'https://app.example/dashboard'],
-            'a single-slash path keeps its query' => ['/dashboard?next=1', [], 'https://app.example/dashboard?next=1'],
-            'surrounding space is trimmed from a relative path' => ['  /dashboard  ', [], 'https://app.example/dashboard'],
+            'a single-slash path is returned as a relative url' => ['/dashboard', ['accept.paymob.com'], '/dashboard'],
+            'a single-slash path keeps its query' => ['/dashboard?next=1', [], '/dashboard?next=1'],
+            'surrounding space is trimmed from a relative path' => ['  /dashboard  ', [], '/dashboard'],
             'a protocol-relative url is rejected even when its host is listed' => ['//evil.example/phish', ['evil.example'], $fallback],
             'a spaced protocol-relative url is rejected' => ['  //evil.example/phish', ['evil.example'], $fallback],
             'a listed host is allowed' => ['https://accept.paymob.com/cb', $listed, 'https://accept.paymob.com/cb'],
@@ -260,7 +270,15 @@ final class DeciderTest extends TestCase
             'an ipv4 literal is rejected when not listed' => ['https://127.0.0.1/', $listed, $fallback],
             'a hex ipv4 literal is rejected when not listed' => ['https://0x7f.1/', $listed, $fallback],
             'an ipv6 literal is rejected when not listed' => ['https://[::1]/', $listed, $fallback],
-            'a dot segment path that becomes a double slash stays on the current host' => ['/..//evil.example', [], 'https://app.example//evil.example'],
+            'a dot segment path that becomes a double slash is rejected' => ['/..//evil.example', [], $fallback],
+            'a dot segment before a backslash is rejected' => ['/./\\evil.example', [], $fallback],
+            'a relative path keeps its fragment' => ['/a/b?x=1#top', [], '/a/b?x=1#top'],
+            'dot segments are resolved in a relative path' => ['/a/../b', [], '/b'],
+            'a relative path is encoded by the parser' => ["/caf\u{00E9} x", [], '/caf%C3%A9%20x'],
+            'an encoded double slash stays a path' => ['/%2F/evil.example', [], '/%2F/evil.example'],
+            'an encoded backslash stays a path' => ['/%5Cevil.example', [], '/%5Cevil.example'],
+            'a carriage return inside a protocol-relative url is rejected' => ["/\r/evil.example", [], $fallback],
+            'a relative path with a backslash and tab is rejected' => ["/\t\\evil.example", [], $fallback],
             'a path without a slash is rejected when the current host is not listed' => ['evil.example', $listed, $fallback],
         ];
     }
