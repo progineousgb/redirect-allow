@@ -81,13 +81,13 @@ return RedirectAllow::to($request->string('next'))
     ->send();
 ```
 
-`send()` uses the current request URL as the base for a relative path. Call `base()` with an absolute URL when the decision runs outside a request, or when you want a different base.
+`send()` uses the current request URL as the base for a target that is not a single-slash path, such as `dashboard` or `?tab=2`. Call `base()` with an absolute URL when the decision runs outside a request, or when you want a different base. A single-slash path does not use the base.
 
 ## Relative paths and listed hosts
 
 Null, empty, and whitespace use the fallback.
 
-A path that starts with a single slash, such as `/dashboard`, is resolved against the current absolute URL. It is allowed when that resolution stays on the current host and the result is https. The value used is the URL the WHATWG parser produced.
+A path that starts with a single slash, such as `/dashboard?tab=2#top`, is returned as a relative URL: the path, query, and fragment as the WHATWG parser normalized them. Dot segments are resolved and unsafe characters are percent-encoded, so `/a/../b` becomes `/b`. The browser resolves the result against the page it is on, so the `Host` header of the request cannot change where it points. A path that the parser would move to another host, such as `/\evil.example` or `/<tab>/evil.example`, is rejected. A path that normalizes to two leading slashes, such as `/..//evil.example`, is rejected too.
 
 A protocol-relative value that starts with `//` is rejected, and the fallback is used.
 
@@ -103,9 +103,9 @@ Host comparison ignores letter case. One trailing dot, the DNS root, is ignored.
 
 ## The current host
 
-A relative path is allowed on the current host, and the current host comes from the request URL. In Laravel that URL is built from the `Host` header the client sent. If the application accepts any `Host` header, a request with `Host: evil.example` makes `/dashboard` resolve to `https://evil.example/dashboard`, and `$request->host()` in the list becomes `evil.example` too. Enable Laravel's `TrustHosts` middleware, or reject unknown hosts at the web server, before you rely on relative paths. You can also pass a fixed base, such as `->base(config('app.url'))`, and list your own host by name.
+A single-slash path never depends on the request. It stays a relative URL on whatever site served the page.
 
-A relative path is only kept when the result is https. On a plain http base, such as `http://localhost` in development, a relative path uses the fallback.
+A target without a leading slash, such as `dashboard` or `../x`, is resolved against the base URL, and then it has to pass the host list like any absolute URL. In a request, that base comes from the `Host` header. If you list `$request->host()`, enable Laravel's `TrustHosts` middleware, or list your own hostname directly instead.
 
 ## Limits
 
