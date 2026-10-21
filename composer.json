@@ -6,12 +6,14 @@
     "keywords": [
         "laravel",
         "redirect",
-        "allowlist"
+        "allowlist",
+        "open-redirect",
+        "security"
     ],
     "authors": [
         {
             "name": "Pro Gineous",
-            "email": "dev@progineous.com"
+            "email": "github@progineous.com"
         }
     ],
     "require": {
@@ -19,10 +21,16 @@
         "league/uri-polyfill": "^7.9"
     },
     "require-dev": {
-        "phpunit/phpunit": "^11.5"
+        "phpunit/phpunit": "^11.5",
+        "illuminate/support": "^12.0 || ^13.0",
+        "illuminate/http": "^12.0 || ^13.0",
+        "illuminate/validation": "^12.0 || ^13.0",
+        "phpstan/phpstan": "^2.1"
     },
     "suggest": {
-        "illuminate/support": "Optional. Registers the service provider, facade, validation rule, and redirect response on Laravel 12 and 13 (^12.0 || ^13.0). The decision engine does not need Laravel."
+        "illuminate/support": "Optional. Registers the service provider, facade, validation rule, and redirect response on Laravel 12 and 13 (^12.0 || ^13.0). The decision engine does not need Laravel.",
+        "illuminate/http": "Optional. Needed for PendingRedirect::send(), which returns an Illuminate redirect response (^12.0 || ^13.0).",
+        "illuminate/validation": "Optional. Needed for the AllowedRedirect validation rule (^12.0 || ^13.0)."
     },
     "autoload": {
         "psr-4": {
@@ -46,6 +54,7 @@
     },
     "minimum-stability": "stable",
     "scripts": {
-        "test": "phpunit"
+        "test": "phpunit",
+        "analyse": "phpstan analyse --memory-limit=1G"
     }
 }

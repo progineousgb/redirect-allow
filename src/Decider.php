@@ -53,13 +53,12 @@ final class Decider
         }
 
         $host = $this->normalizeHost($rawHost);
-        if ($host === '' || $this->hostsDisagree($parsed, $host)) {
+        if ($host === '' || str_ends_with($host, '.') || $this->hostsDisagree($parsed, $host)) {
             return $fallback;
         }
 
         $baseHost = $this->normalizeHost((string) $baseUrl->getAsciiHost());
-        $relativePath = str_starts_with($target, '/') && !str_starts_with($target, '//');
-        if ($relativePath && $host === $baseHost) {
+        if (str_starts_with($target, '/') && $host === $baseHost) {
             return $url->toAsciiString();
         }
 
@@ -146,6 +145,11 @@ final class Decider
         }
 
         $other = $this->normalizeHost($parsed['host']);
+        if (preg_match('/[^\x00-\x7F]/', $other) === 1) {
+            // A Unicode host is compared in its ASCII form. Only a plain Unicode
+            // hostname converts; anything with other syntax stays as it is.
+            $other = preg_match('~^[^/\\\\@:?#\s%\[\]]+$~u', $other) === 1 ? ($this->asciiHost($other) ?? $other) : $other;
+        }
 
         return $other !== '' && $other !== $host;
     }
@@ -179,6 +183,11 @@ final class Decider
     }
 
     /**
+     * An allowlist entry is a hostname, or a hostname with one leading dot.
+     * A Unicode hostname is converted to its ASCII (punycode) form so it can match
+     * the host the WHATWG parser produced. An entry that is not a hostname, such as
+     * a URL, a host with a port, or a wildcard, is a configuration error.
+     *
      * @return array{suffix: bool, host: string}|null
      */
     private function allowlistEntry(mixed $entry): ?array
@@ -193,14 +202,49 @@ final class Decider
         }
 
         $suffix = str_starts_with($raw, '.') && !str_starts_with($raw, '..');
-        $host = $this->normalizeHost($suffix ? substr($raw, 1) : $raw);
+        $name = $suffix ? substr($raw, 1) : $raw;
+        $bracketed = str_starts_with($name, '[') && str_ends_with($name, ']');
+        if (!$bracketed && preg_match('~[/\\\\@:*?#\s%]~', $name) === 1) {
+            throw new InvalidArgumentException(sprintf('Allowlist entry [%s] must be a hostname, such as example.com or .example.com.', $raw));
+        }
+
+        $host = $this->normalizeHost($name);
         if ($host === '') {
             return null;
+        }
+
+        if (!$bracketed) {
+            $host = $this->asciiHost($host);
+            if ($host === null) {
+                throw new InvalidArgumentException(sprintf('Allowlist entry [%s] is not a valid hostname.', $raw));
+            }
         }
 
         return ['suffix' => $suffix, 'host' => $host];
     }
 
+    private function asciiHost(string $host): ?string
+    {
+        try {
+            $errors = [];
+            $url = Url::parse('https://' . $host . '/', null, $errors);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (!$url instanceof Url) {
+            return null;
+        }
+
+        $ascii = $url->getAsciiHost();
+
+        return is_string($ascii) && $ascii !== '' ? $this->normalizeHost($ascii) : null;
+    }
+
+    /**
+     * Lowercase, drop IPv6 brackets, and drop one trailing dot (the DNS root).
+     * A second trailing dot is kept, so an empty label never matches a real host.
+     */
     private function normalizeHost(string $host): string
     {
         $host = strtolower(trim($host));
@@ -208,6 +252,6 @@ final class Decider
             $host = substr($host, 1, -1);
         }
 
-        return rtrim($host, '.');
+        return str_ends_with($host, '.') ? substr($host, 0, -1) : $host;
     }
 }

@@ -101,6 +101,33 @@ final class DeciderTest extends TestCase
         }
     }
 
+    #[DataProvider('invalidAllowlistEntries')]
+    public function test_an_allowlist_entry_that_is_not_a_hostname_is_a_configuration_error(string $entry): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->decide('https://accept.paymob.com/', [$entry]);
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function invalidAllowlistEntries(): array
+    {
+        return [
+            'a url' => ['https://accept.paymob.com'],
+            'a wildcard' => ['*.example.com'],
+            'a host with a port' => ['accept.paymob.com:443'],
+            'a host with a path' => ['accept.paymob.com/cb'],
+            'a host with userinfo' => ['user@accept.paymob.com'],
+        ];
+    }
+
+    public function test_an_ipv6_allowlist_entry_matches(): void
+    {
+        $this->assertSame('https://[::1]/', $this->decide('https://[::1]/', ['[::1]']));
+    }
+
     public function test_laravel_wiring_is_present_without_booting_the_framework(): void
     {
         $root = dirname(__DIR__);
@@ -204,6 +231,37 @@ final class DeciderTest extends TestCase
             'the fallback is used when the parsers disagree on the host' => ['https://allowed.example\\.evil.example/', ['allowed.example'], $fallback],
             'a slash path that resolves to another host is rejected' => ['/\\evil.example', $listed, $fallback],
             'garbage uses the fallback' => ['::::', $listed, $fallback],
+            'two trailing dots do not match the host' => ['https://accept.paymob.com../ok', $listed, $fallback],
+            'a unicode allowlist entry matches the punycode target' => ['https://xn--bcher-kva.de/', ["b\u{00FC}cher.de"], 'https://xn--bcher-kva.de/'],
+            'a unicode target matches a unicode allowlist entry' => ["https://b\u{00FC}cher.de/", ["b\u{00FC}cher.de"], 'https://xn--bcher-kva.de/'],
+            'a unicode target matches a punycode allowlist entry' => ["https://m\u{00FC}nchen.de/", ['xn--mnchen-3ya.de'], 'https://xn--mnchen-3ya.de/'],
+            'a cyrillic lookalike host is rejected' => ["https://\u{0430}pp.example/", ['app.example'], $fallback],
+            'an ideographic full stop does not join a listed host' => ["https://evil.example\u{3002}accept.paymob.com/", $listed, $fallback],
+            'a backslash after a slash path is rejected' => ['/\\/evil.example', $listed, $fallback],
+            'a tab inside a protocol-relative url is rejected' => ["/\t/evil.example", $listed, $fallback],
+            'a newline inside a protocol-relative url is rejected' => ["/\n/evil.example", $listed, $fallback],
+            'a nul before a protocol-relative url is rejected' => ["\0//evil.example", $listed, $fallback],
+            'an ideographic space before a protocol-relative url is rejected' => ["\u{3000}//evil.example", $listed, $fallback],
+            'a double backslash is rejected' => ['\\\\evil.example', $listed, $fallback],
+            'https with a backslash authority is rejected' => ['https:\\\\evil.example', $listed, $fallback],
+            'a mixed case https scheme on another host is rejected' => ['HtTpS://evil.example/', $listed, $fallback],
+            'userinfo with a backslash is rejected' => ['https://evil.example\\@accept.paymob.com/', $listed, $fallback],
+            'an encoded at sign does not create userinfo' => ['https://accept.paymob.com%40evil.example/', $listed, $fallback],
+            'an encoded dot does not join hosts' => ['https://accept.paymob.com%2eevil.example/', $listed, $fallback],
+            'a port before an at sign is rejected' => ['https://accept.paymob.com:443@evil.example/', $listed, $fallback],
+            'a fragment at sign keeps the real host' => ['https://evil.example#@accept.paymob.com', $listed, $fallback],
+            'a query at sign keeps the real host' => ['https://evil.example?@accept.paymob.com', $listed, $fallback],
+            'an out of range port is rejected' => ['https://accept.paymob.com:99999/', $listed, $fallback],
+            'a javascript url with a listed host is rejected' => ['javascript://accept.paymob.com/%0aalert(1)', $listed, $fallback],
+            'a javascript scheme with a tab is rejected' => ["java\tscript:alert(1)", $listed, $fallback],
+            'a javascript scheme with leading space is rejected' => [' javascript:alert(1)', $listed, $fallback],
+            'a blob url is rejected' => ['blob:https://accept.paymob.com/x', $listed, $fallback],
+            'a websocket url is rejected' => ['wss://accept.paymob.com/', $listed, $fallback],
+            'an ipv4 literal is rejected when not listed' => ['https://127.0.0.1/', $listed, $fallback],
+            'a hex ipv4 literal is rejected when not listed' => ['https://0x7f.1/', $listed, $fallback],
+            'an ipv6 literal is rejected when not listed' => ['https://[::1]/', $listed, $fallback],
+            'a dot segment path that becomes a double slash stays on the current host' => ['/..//evil.example', [], 'https://app.example//evil.example'],
+            'a path without a slash is rejected when the current host is not listed' => ['evil.example', $listed, $fallback],
         ];
     }
 }
